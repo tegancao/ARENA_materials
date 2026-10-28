@@ -1,0 +1,65 @@
+# Temporary: runs install_uv.sh on real Linux / macOS / Windows machines (issue #427). Not for merging.
+name: Test install_uv.sh
+
+on:
+  push:
+    branches:
+      - install-uv-ci-test
+  workflow_dispatch:
+
+jobs:
+  install:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: vastai  # exercises the sudo apt path; runners aren't root, so not runpod
+            venv_python: .venv/bin/python
+          - os: macos-latest
+            platform: local
+            venv_python: .venv/bin/python
+          - os: windows-latest
+            platform: local
+            venv_python: .venv/Scripts/python.exe
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash  # Git Bash on Windows
+    steps:
+      - name: Free disk space (Linux CUDA wheels are several GB)
+        if: runner.os == 'Linux'
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+
+      - uses: actions/checkout@v4
+
+      - name: Run install_uv.sh (default platform detection)
+        if: matrix.platform == 'local'
+        run: ./install_uv.sh
+
+      - name: Run install_uv.sh --platform ${{ matrix.platform }}
+        if: matrix.platform != 'local'
+        run: ./install_uv.sh --platform ${{ matrix.platform }}
+
+      - name: Re-run (should reuse the venv)
+        run: ./install_uv.sh --platform ${{ matrix.platform }} | tee rerun.log && grep -q "Reusing existing venv" rerun.log
+
+      - name: Smoke-test imports
+        run: |
+          ${{ matrix.venv_python }} - << 'EOF'
+          import sys, platform
+          import torch, jax, einops, transformer_lens, transformers, datasets, brax, gymnasium, inspect_ai
+          print(sys.version, platform.platform())
+          print("torch", torch.__version__, "cuda build:", torch.version.cuda, "mps:", torch.backends.mps.is_available())
+          print("jax", jax.__version__, jax.devices())
+          EOF
+
+      - name: Check kernel and VS Code settings
+        run: |
+          ${{ matrix.venv_python }} -m jupyter kernelspec list | grep arena-env
+          if [[ "${{ matrix.platform }}" == "local" ]]; then cat .vscode/settings.json; else cat ~/.vscode/settings.json; tail -1 ~/.bashrc; fi
+          ${{ matrix.venv_python }} -c "import json; json.load(open('.vscode/settings.json' if '${{ matrix.platform }}' == 'local' else __import__('os').path.expanduser('~/.vscode/settings.json')))"
+
+      - name: Disk usage
+        if: always()
+        run: df -h . || true
