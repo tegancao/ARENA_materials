@@ -12,16 +12,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # ubuntu-latest (--platform vastai) and windows-latest passed in run 40708871049; macos-latest never got a
+        # runner (arm64 capacity), so this run only retries macOS, on two labels with separate runner pools.
         include:
-          - os: ubuntu-latest
-            platform: vastai  # exercises the sudo apt path; runners aren't root, so not runpod
-            venv_python: .venv/bin/python
-          - os: macos-latest
+          - os: macos-15
             platform: local
             venv_python: .venv/bin/python
-          - os: windows-latest
+          - os: macos-14
             platform: local
-            venv_python: .venv/Scripts/python.exe
+            venv_python: .venv/bin/python
     runs-on: ${{ matrix.os }}
     defaults:
       run:
